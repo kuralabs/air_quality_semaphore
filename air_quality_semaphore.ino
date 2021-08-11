@@ -1,5 +1,8 @@
 #include <Adafruit_SCD30.h>
 #include <Adafruit_SSD1306.h>
+#include <Adafruit_BME280.h>
+#include <Adafruit_NeoPixel.h>
+
 
 const char HEADER[] PROGMEM = 
   "    _    _         ___              _ _ _\n"
@@ -16,18 +19,29 @@ const char HEADER[] PROGMEM =
   "                           |_|\n"
 ;
 
-#define MEASUREMENT_INTERVAL 2
+
+#define AIR_MEASUREMENT_INTERVAL 2
 
 Adafruit_SCD30  air;
 
-#define SCREEN_WIDTH         128
-#define SCREEN_HEIGHT        64
-#define SCREEN_RESET         33
-#define SCREEN_ADDRESS       0x3C
+
+#define SCREEN_WIDTH                128
+#define SCREEN_HEIGHT               64
+#define SCREEN_RESET                33
+#define SCREEN_ADDRESS              0x3C
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, SCREEN_RESET);
 
 
+#define SENSOR_ADDRESS              0x77
+#define SENSOR_SEALEVELPRESSURE_HPA 1013.25
+
+Adafruit_BME280 sensor;
+
+
+#define SEMAPHORE_IO                32
+#define SEMAPHORE_LEDS              3
+Adafruit_NeoPixel semaphore = Adafruit_NeoPixel(SEMAPHORE_LEDS, SEMAPHORE_IO, NEO_GRB + NEO_KHZ800);
 
 
 void abort(void) {
@@ -36,6 +50,7 @@ void abort(void) {
 
 
 void setup(void) {
+  uint16_t time = millis();
 
   // Initialize serial interface
   Serial.begin(115200);
@@ -52,7 +67,7 @@ void setup(void) {
     abort();
   }
 
-  if (!air.setMeasurementInterval(MEASUREMENT_INTERVAL)){
+  if (!air.setMeasurementInterval(AIR_MEASUREMENT_INTERVAL)){
     Serial.println(F("ERROR: Failed to set measurement interval!"));
     abort();
   }
@@ -63,16 +78,44 @@ void setup(void) {
 
   Serial.println(F("STATUS: Air quality sensor initialized"));
 
-  // Initialize screen
+  // Initialize display
   Serial.println(F("STATUS: Initializing display ..."));
-  
+
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("ERROR: Failed to initialize display!"));
     abort();
   }
+
   display.clearDisplay();
+  display.display();
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setRotation(0);
 
   Serial.println(F("STATUS: Display initialized"));
+
+  // Initialize sensor
+  Serial.println(F("STATUS: Initializing barometric, humidity and temperature sensor ..."));
+  
+  if (!sensor.begin(SENSOR_ADDRESS, &Wire)) {
+    Serial.println(F("ERROR: Failed to initialize barometric, humidity and temperature sensor!"));
+    abort();
+  }
+
+  Serial.println(F("STATUS: Barometric, humidity and temperature sensor initialized"));
+
+  // Initialize semaphore
+  Serial.println(F("STATUS: Initializing semaphore lights ..."));
+
+  semaphore.begin();
+  semaphore.show(); // Initialize all pixels to 'off'
+
+  Serial.println(F("STATUS: Semaphore lights initialized"));
+
+
+  Serial.print(F("STATUS: Board successfully initialized in "));
+  Serial.print(millis() - time, DEC);
+  Serial.println(" ms");
 }
 
 
@@ -106,5 +149,19 @@ void loop() {
     display.display();
   }
 
-  delay(100);
+  Serial.print("Temperature = ");
+  Serial.print(sensor.readTemperature());
+  Serial.println(" °C");
+  Serial.print("Pressure = ");
+  Serial.print(sensor.readPressure() / 100.0F);
+  Serial.println(" hPa");
+  Serial.print("Approx. Altitude = ");
+  Serial.print(sensor.readAltitude(SENSOR_SEALEVELPRESSURE_HPA));
+  Serial.println(" m");
+  Serial.print("Humidity = ");
+  Serial.print(sensor.readHumidity());
+  Serial.println(" %");
+  Serial.println();
+
+  delay(1000);
 }
