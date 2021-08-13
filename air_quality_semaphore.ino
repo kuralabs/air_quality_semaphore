@@ -215,9 +215,7 @@ static const unsigned char ICON_UNITS[] PROGMEM = {
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, SCREEN_RESET);
 
 
-// Pressure at sea level of 1013.25  is a good global average, perfect for global deployment
-// Pressure at sea level of 1011.0 is Costa Rica's pressure.
-#define SENSOR_SEALEVELPRESSURE_HPA 1011.0
+#define SENSOR_SEALEVELPRESSURE_HPA 1013.25
 #define SENSOR_ADDRESS              0x77
 
 Adafruit_BME280 sensor;
@@ -235,13 +233,12 @@ Adafruit_SCD30  air;
 #define SEMAPHORE_IO                32
 #define SEMAPHORE_LEDS              3
 
-Adafruit_NeoPixel semaphore = Adafruit_NeoPixel(SEMAPHORE_LEDS, SEMAPHORE_IO, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel semaphore = Adafruit_NeoPixel(SEMAPHORE_LEDS, SEMAPHORE_IO, NEO_RGB + NEO_KHZ800);
 
 
 #define MARGIN                      5
 #define THIRDSCREEN                 (SCREEN_HEIGHT / 3)
 #define LOADTIME                    3000
-#define SCREENTIME                  3000
 
 
 void abort() {
@@ -359,6 +356,41 @@ void logSensorData() {
 }
 
 
+#define BREATHE_MAX_BRIGHTNESS      90
+#define BREATHE_SPEED_FACTOR        0.004
+#define BREATHE_STEP_DELAY          4
+
+void breathe(uint32_t color) {
+
+  // Function fine tunned to execute for approximately 3000 ms
+  // unsigned long time = millis();
+
+  for (unsigned int i = 0; true; i++) {
+
+    // Intensity will go from 0 to the maximum brightness in a "breathing" manner
+    float intensity = BREATHE_MAX_BRIGHTNESS * sin(BREATHE_SPEED_FACTOR * i);
+
+    if (intensity < 0.0) {
+      break;
+    }
+
+    semaphore.setBrightness(intensity);
+
+    // Now set every LED to that color
+    for (int ledNumber = 0; ledNumber < semaphore.numPixels(); ledNumber++) {
+      semaphore.setPixelColor(ledNumber, color);
+    }
+
+    semaphore.show();
+    delay(BREATHE_STEP_DELAY);
+  }
+
+  // Serial.print(F("STATUS: Breathe took "));
+  // Serial.print(millis() - time, DEC);
+  // Serial.println(" ms");
+}
+
+
 void setup() {
   unsigned long time = millis();
 
@@ -372,7 +404,7 @@ void setup() {
   // Initialize display
   Serial.println(F("STATUS: Initializing display ..."));
 
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("ERROR: Failed to initialize display!"));
     abort();
   }
@@ -457,6 +489,88 @@ void loop() {
   update();
   logSensorData();
 
+  // Show smileys
+  int16_t  x1, y1;
+  uint16_t w, h;
+
+  uint32_t color;
+
+  display.clearDisplay();
+  display.setTextSize(1);
+
+  if (lastReadings.airCO2 >= QUALITY_CO2_CRITICAL) {
+    display.drawBitmap(
+      (SCREEN_WIDTH - ICON_SMILE_CRITICAL_W) / 2,
+      MARGIN,
+      ICON_SMILE_CRITICAL,
+      ICON_SMILE_CRITICAL_W,
+      ICON_SMILE_CRITICAL_H,
+      SSD1306_WHITE
+    );
+    display.getTextBounds(F("CRITICO!!"), 0, 0, &x1, &y1, &w, &h);
+    display.setCursor(
+      (SCREEN_WIDTH - w) / 2,
+      ICON_SMILE_CRITICAL_H + 2 * MARGIN
+    );
+    display.println(F("CRITICO!!"));
+    color = semaphore.Color(255, 0, 0); // Red
+
+  } else if (lastReadings.airCO2 >= QUALITY_CO2_BAD) {
+    display.drawBitmap(
+      (SCREEN_WIDTH - ICON_SMILE_BAD_W) / 2,
+      MARGIN,
+      ICON_SMILE_BAD,
+      ICON_SMILE_BAD_W,
+      ICON_SMILE_BAD_H,
+      SSD1306_WHITE
+    );
+    display.getTextBounds(F("MALO!"), 0, 0, &x1, &y1, &w, &h);
+    display.setCursor(
+      (SCREEN_WIDTH - w) / 2,
+      ICON_SMILE_CRITICAL_H + 2 * MARGIN
+    );
+    display.println(F("MALO!"));
+    color = semaphore.Color(255, 248, 0); // Yellow
+
+  } else if (lastReadings.airCO2 >= QUALITY_CO2_REGULAR) {
+    display.drawBitmap(
+      (SCREEN_WIDTH - ICON_SMILE_REGULAR_W) / 2,
+      MARGIN,
+      ICON_SMILE_REGULAR,
+      ICON_SMILE_REGULAR_W,
+      ICON_SMILE_REGULAR_H,
+      SSD1306_WHITE
+    );
+    display.getTextBounds(F("REGULAR"), 0, 0, &x1, &y1, &w, &h);
+    display.setCursor(
+      (SCREEN_WIDTH - w) / 2,
+      ICON_SMILE_CRITICAL_H + 2 * MARGIN
+    );
+    display.println(F("REGULAR"));
+    color = semaphore.Color(255, 255, 255); // White
+
+  } else {
+    display.drawBitmap(
+      (SCREEN_WIDTH - ICON_SMILE_GOOD_W) / 2,
+      MARGIN,
+      ICON_SMILE_GOOD,
+      ICON_SMILE_GOOD_W,
+      ICON_SMILE_GOOD_H,
+      SSD1306_WHITE
+    );
+    display.getTextBounds(F("BUENO"), 0, 0, &x1, &y1, &w, &h);
+    display.setCursor(
+      (SCREEN_WIDTH - w) / 2,
+      ICON_SMILE_CRITICAL_H + 2 * MARGIN
+    );
+    display.println(F("BUENO"));
+    color = semaphore.Color(0, 255, 24); // Green
+  }
+
+  display.display();
+  breathe(color);
+
+
   // Show values
   display.clearDisplay();
 
@@ -481,80 +595,5 @@ void loop() {
   display.println(" %");
 
   display.display();
-  delay(SCREENTIME);
-
-  // Show smileys
-  int16_t  x1, y1;
-  uint16_t w, h;
-
-  display.clearDisplay();
-  display.setTextSize(1);
-
-  if (lastReadings.airCO2 >= QUALITY_CO2_CRITICAL) {
-    display.drawBitmap(
-      (SCREEN_WIDTH - ICON_SMILE_CRITICAL_W) / 2,
-      MARGIN,
-      ICON_SMILE_CRITICAL,
-      ICON_SMILE_CRITICAL_W,
-      ICON_SMILE_CRITICAL_H,
-      SSD1306_WHITE
-    );
-    display.getTextBounds(F("CRITICO!!"), 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(
-      (SCREEN_WIDTH - w) / 2,
-      ICON_SMILE_CRITICAL_H + 2 * MARGIN
-    );
-    display.println(F("CRITICO!!"));
-
-  } else if (lastReadings.airCO2 >= QUALITY_CO2_BAD) {
-    display.drawBitmap(
-      (SCREEN_WIDTH - ICON_SMILE_BAD_W) / 2,
-      MARGIN,
-      ICON_SMILE_BAD,
-      ICON_SMILE_BAD_W,
-      ICON_SMILE_BAD_H,
-      SSD1306_WHITE
-    );
-    display.getTextBounds(F("MALO!"), 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(
-      (SCREEN_WIDTH - w) / 2,
-      ICON_SMILE_CRITICAL_H + 2 * MARGIN
-    );
-    display.println(F("MALO!"));
-
-  } else if (lastReadings.airCO2 >= QUALITY_CO2_REGULAR) {
-    display.drawBitmap(
-      (SCREEN_WIDTH - ICON_SMILE_REGULAR_W) / 2,
-      MARGIN,
-      ICON_SMILE_REGULAR,
-      ICON_SMILE_REGULAR_W,
-      ICON_SMILE_REGULAR_H,
-      SSD1306_WHITE
-    );
-    display.getTextBounds(F("REGULAR"), 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(
-      (SCREEN_WIDTH - w) / 2,
-      ICON_SMILE_CRITICAL_H + 2 * MARGIN
-    );
-    display.println(F("REGULAR"));
-
-  } else {
-    display.drawBitmap(
-      (SCREEN_WIDTH - ICON_SMILE_GOOD_W) / 2,
-      MARGIN,
-      ICON_SMILE_GOOD,
-      ICON_SMILE_GOOD_W,
-      ICON_SMILE_GOOD_H,
-      SSD1306_WHITE
-    );
-    display.getTextBounds(F("BUENO"), 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(
-      (SCREEN_WIDTH - w) / 2,
-      ICON_SMILE_CRITICAL_H + 2 * MARGIN
-    );
-    display.println(F("BUENO"));
-  }
-
-  display.display();
-  delay(SCREENTIME);
+  breathe(color);
 }
